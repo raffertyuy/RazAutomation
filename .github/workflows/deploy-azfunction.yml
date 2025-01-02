@@ -1,0 +1,31 @@
+name: Deploy Azure Function
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  zip-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+    
+    - name: Archive /src to app.zip
+      run: |
+        cd src
+        zip -r ../app.zip .
+        cd ..
+    
+    - name: Upload app.zip to Azure Storage
+      run: |
+        az storage blob upload -f 'app.zip' --account-name ${{ vars.AZURE_STORAGE_ACCOUNT }} -c ${{ vars.AZURE_STORAGE_CONTAINER }} -n 'app.zip' --overwrite true --auth-mode login
+
+    - name: Deploy to Azure Function
+      run: |
+        $url = az storage blob url -c ${{ vars.AZURE_STORAGE_CONTAINER }} -n 'app.zip' --account-name ${{ vars.AZURE_STORAGE_ACCOUNT }} --auth-mode login 
+        az functionapp config appsettings set --name ${{ vars.AZURE_FUNCTION_APP_NAME }} -g ${{ vars.AZURE_RESOURCE_GROUP }} --settings WEBSITE_RUN_FROM_PACKAGE=$url 
+
+        az functionapp restart --name ${{ vars.AZURE_FUNCTION_APP_NAME }} -g ${{ vars.AZURE_RESOURCE_GROUP }}
