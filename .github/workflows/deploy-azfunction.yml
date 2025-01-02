@@ -6,6 +6,10 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   zip-and-deploy:
     runs-on: ubuntu-latest
@@ -25,16 +29,22 @@ jobs:
       with:
         client-id: ${{ secrets.AZURE_CLIENT_ID }}
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }} 
-        enable-AzPSSession: true
+        subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     
     - name: Upload app.zip to Azure Storage
       run: |
         az storage blob upload -f 'app.zip' --account-name ${{ vars.AZURE_STORAGE_ACCOUNT }} -c ${{ vars.AZURE_STORAGE_CONTAINER }} -n 'app.zip' --overwrite true --auth-mode login
+        
+        url=$(az storage blob url -c ${{ vars.AZURE_STORAGE_CONTAINER }} -n 'app.zip' --account-name ${{ vars.AZURE_STORAGE_ACCOUNT }} --auth-mode login)
+        echo "Blob URL: $url"
+        echo "blob_url=$url" >> $GITHUB_ENV
 
     - name: Deploy to Azure Function
       run: |
-        $url = az storage blob url -c ${{ vars.AZURE_STORAGE_CONTAINER }} -n 'app.zip' --account-name ${{ vars.AZURE_STORAGE_ACCOUNT }} --auth-mode login 
-        az functionapp config appsettings set --name ${{ vars.AZURE_FUNCTION_APP_NAME }} -g ${{ vars.AZURE_RESOURCE_GROUP }} --settings WEBSITE_RUN_FROM_PACKAGE=$url 
-
+        az functionapp config appsettings set --name ${{ vars.AZURE_FUNCTION_APP_NAME }} -g ${{ vars.AZURE_RESOURCE_GROUP }} \
+          --settings WEBSITE_RUN_FROM_PACKAGE=${{ env.blob_url }} \
+          AzureWebJobsStorage__blobServiceUri='https://${{ vars.AZURE_STORAGE_ACCOUNT }}.blob.core.windows.net' \
+          AzureWebJobsStorage__queueServiceUri='https://${{ vars.AZURE_STORAGE_ACCOUNT }}.queue.core.windows.net' \
+          AzureWebJobsStorage__tableServiceUri='https://${{ vars.AZURE_STORAGE_ACCOUNT }}.table.core.windows.net' \
+          WEBSITE_RUN_FROM_PACKAGE_BLOB_MI_RESOURCE_ID=${{ vars.WEBSITE_RUN_FROM_PACKAGE_BLOB_MI_RESOURCE_ID }}
         az functionapp restart --name ${{ vars.AZURE_FUNCTION_APP_NAME }} -g ${{ vars.AZURE_RESOURCE_GROUP }}
