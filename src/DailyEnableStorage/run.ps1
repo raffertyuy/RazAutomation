@@ -5,15 +5,32 @@ param($Timer)
 Import-Module Az.Resources
 Import-Module Az.Storage
 
-# Get the storage account
-$storageAccount = Get-AzStorageAccount -ResourceGroupName (Get-AzStorageAccount | Where-Object StorageAccountName -eq 'raztype').ResourceGroupName -Name 'raztype'
+# Define storage account names
+$storageAccounts = @(
+    'raztype',
+    'razautomationpsstore',
+    'raznotesapistore',
+    'razghcpaisearchstore'
+    # Add more storage account names here as needed
+)
 
-# Enable Storage Account Key Access
-$storageAccount | Set-AzStorageAccount -AllowSharedKeyAccess $true
+foreach ($accountName in $storageAccounts) {
+    try {
+        # Get the storage account
+        $storageAccount = Get-AzStorageAccount -ResourceGroupName (Get-AzStorageAccount | 
+            Where-Object StorageAccountName -eq $accountName).ResourceGroupName -Name $accountName
 
-# Enable public network access from all networks
-$storageAccount | Set-AzStorageAccount -PublicNetworkAccess Enabled -NetworkRuleSet @{
-    DefaultAction = "Allow"
+        # Enable Storage Account Key Access
+        $storageAccount | Set-AzStorageAccount -AllowSharedKeyAccess $true
+
+        # Enable public network access from all networks
+        $storageAccount | Set-AzStorageAccount -PublicNetworkAccess Enabled -NetworkRuleSet @{
+            DefaultAction = "Allow"
+        }
+
+        Write-Host "Storage account '$accountName' has been configured with key access and public network access enabled."
+    }
+    catch {
+        Write-Error "Failed to configure storage account '$accountName': $_"
+    }
 }
-
-Write-Host "Storage account 'raztype' has been configured with key access and public network access enabled."
