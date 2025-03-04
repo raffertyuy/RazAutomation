@@ -31,19 +31,32 @@ jobs:
         tenant-id: ${{ secrets.AZURE_TENANT_ID }}
         subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
     
-    - name: Temporarily enable Azure Storage public access (initially disabled by SFI)
+    - name: Check and manage Storage Account network access
       run: |
-        az storage account update --name ${{ vars.AZURE_STORAGE_ACCOUNT }} \
+        # Check current network access state
+        current_access=$(az storage account show --name ${{ vars.AZURE_STORAGE_ACCOUNT }} \
           --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} \
-          --public-network-access Enabled \
-          --default-action Allow
-
-        # Wait for changes to propagate (increased wait time)
-        echo "Waiting for network changes to propagate..."
-        sleep 30
+          --query "publicNetworkAccess" -o tsv)
+        
+        echo "Current public network access: $current_access"
+        echo "network_was_disabled=false" >> $GITHUB_ENV
+        
+        if [ "$current_access" = "Disabled" ]; then
+          echo "Enabling Azure Storage public access..."
+          az storage account update --name ${{ vars.AZURE_STORAGE_ACCOUNT }} \
+            --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} \
+            --public-network-access Enabled \
+            --default-action Allow
+          
+          echo "network_was_disabled=true" >> $GITHUB_ENV
+          
+          # Wait for changes to propagate
+          echo "Waiting for network changes to propagate..."
+          sleep 30
 
         # Verify network rules
         az storage account show -n ${{ vars.AZURE_STORAGE_ACCOUNT }} --query networkRuleSet
+        fi
 
     - name: Upload app.zip to Azure Storage
       run: |
@@ -53,7 +66,8 @@ jobs:
         echo "Blob URL: $url"
         echo "blob_url=$url" >> $GITHUB_ENV
 
-    - name: Re-disable Azure Storage public access
+    - name: Re-disable Azure Storage network access if it was initially denied
+      if: env.network_was_disabled == 'true'
       run: |
         az storage account update --name ${{ vars.AZURE_STORAGE_ACCOUNT }} \
           --resource-group ${{ vars.AZURE_RESOURCE_GROUP }} \
