@@ -1,0 +1,55 @@
+name: Daily Enable Storage Accounts
+
+on:
+  schedule:
+    - cron: '5 * * * *'    # Runs at minute 5 of every hour
+    - cron: '10 0,7,8,12 * * *'  # Runs at 00:10, 07:10, 08:10, and 12:10 every day
+  workflow_dispatch:      # Allows manual trigger
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  enable-storage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+            client-id: ${{ secrets.AZURE_CLIENT_ID }}
+            tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+            subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Enable Storage Accounts
+        uses: azure/powershell@v1
+        with:
+          inlineScript: |
+            $storageAccounts = @(
+              'raztype',
+              'razautomationpsstore',
+              'raznotesapistore',
+              'razghcpaisearchstore'
+            )
+
+            foreach ($accountName in $storageAccounts) {
+              try {
+                # Get the storage account
+                $storageAccount = Get-AzStorageAccount -ResourceGroupName (Get-AzStorageAccount | 
+                    Where-Object StorageAccountName -eq $accountName).ResourceGroupName -Name $accountName
+
+                # Enable Storage Account Key Access
+                $storageAccount | Set-AzStorageAccount -AllowSharedKeyAccess $true
+
+                # Enable public network access from all networks
+                $storageAccount | Set-AzStorageAccount -PublicNetworkAccess Enabled -NetworkRuleSet @{
+                    DefaultAction = "Allow"
+                }
+
+                Write-Host "Storage account '$accountName' has been configured with key access and public network access enabled."
+              }
+              catch {
+                Write-Error "Failed to configure storage account '$accountName': $_"
+              }
+            }
+          azPSVersion: "latest"
